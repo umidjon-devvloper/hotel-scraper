@@ -1,6 +1,6 @@
 # Hotels Aggregator API — Railway image
 # Based on Puppeteer's official image which bundles Chrome + all system libs.
-FROM ghcr.io/puppeteer/puppeteer:19.7.2
+FROM ghcr.io/puppeteer/puppeteer:24.9.0
 
 # The base image runs as the non-root "pptruser".
 WORKDIR /app
