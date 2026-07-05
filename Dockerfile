@@ -1,16 +1,20 @@
 # Hotels Aggregator API — Railway image
-# Based on Puppeteer's official image which bundles Chrome + all system libs.
+# Puppeteer'ning rasmiy image'i (Chrome uchun barcha tizim kutubxonalari bilan).
 FROM ghcr.io/puppeteer/puppeteer:24.9.0
 
-# The base image runs as the non-root "pptruser".
+# Base image "pptruser" (root emas) sifatida ishlaydi.
 WORKDIR /app
 
-# Chrome already lives in the image; don't let puppeteer re-download it.
-ENV PUPPETEER_SKIP_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable \
-    NODE_ENV=production
+# MUHIM: Chrome yo'lini MAJBURLAMAYMIZ. Ilgari PUPPETEER_EXECUTABLE_PATH=
+# /usr/bin/google-chrome-stable + SKIP_DOWNLOAD=true qilingan edi, lekin bu
+# image'da Chrome u yo'lda EMAS (puppeteer cache'ida) — shu sabab
+# "executablePath must be specified" / ENOENT xatosi. Endi package.json'dagi
+# puppeteer (19.7.2) o'ziga MOS Chromium'ni O'ZI yuklab oladi (SKIP_DOWNLOAD=false)
+# va topadi. Base image barcha tizim kutubxonalarini beradi.
+ENV NODE_ENV=production \
+    PUPPETEER_SKIP_DOWNLOAD=false
 
-# Install deps first for better layer caching.
+# Install deps first for better layer caching. (postinstall Chromium'ni yuklaydi)
 COPY --chown=pptruser:pptruser package*.json ./
 RUN npm ci --omit=dev || npm install --omit=dev
 
