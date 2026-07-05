@@ -1,0 +1,6 @@
+# Railway Nixpacks bilan qurganda (Dockerfile ishlatilmasa) — Chromium'ni apt
+# orqali o'rnatadi (/usr/bin/chromium). browserInstance.cjs uni avtomatik topadi
+# (PUPPETEER_EXECUTABLE_PATH noto'g'ri bo'lsa ham). Agar Railway Dockerfile bilan
+# qursa, bu fayl e'tiborsiz qoladi (Docker image'da Chrome allaqachon bor).
+[phases.setup]
+aptPkgs = ["chromium", "fonts-liberation", "ca-certificates"]

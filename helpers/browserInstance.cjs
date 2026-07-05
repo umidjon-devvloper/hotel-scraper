@@ -3,30 +3,56 @@ const StealthPlugin = require("puppeteer-extra-plugin-stealth");
 const proxyChain = require("proxy-chain");
 const crypto = require("crypto");
 const fs = require("fs");
+const { execSync } = require("child_process");
 
 const { executablePath } = require("puppeteer");
 
 puppeteer.use(StealthPlugin());
 
-// Chrome yo'lini aniqlaymiz. Muhim: PUPPETEER_EXECUTABLE_PATH (masalan Docker'da
-// /usr/bin/google-chrome-stable) o'rnatilgan bo'lsa-yu, lekin o'sha faylda Chrome
-// BO'LMASA (VPS'da Docker'siz ishga tushirilganda shunday bo'ladi) — ilgari
-// "spawn ... ENOENT" bilan qulab, 502 qaytarardi. Endi: yo'l mavjud bo'lsagina
-// ishlatamiz, aks holda puppeteer'ning o'z (bundled) Chromium'iga tushamiz.
+// Chrome/Chromium yo'lini aniqlaymiz — MAVJUD faylni topguncha bir necha manba
+// sinaladi. Ilgari PUPPETEER_EXECUTABLE_PATH mavjud bo'lmagan yo'lni ko'rsatsa
+// "spawn ... ENOENT" / "executablePath ... must be specified" bilan 502 qaytardi.
+// Endi:
+//   1) env yo'li (faqat fayl mavjud bo'lsa)   — Docker: /usr/bin/google-chrome-stable
+//   2) tizimdagi keng tarqalgan yo'llar        — apt/Nixpacks: /usr/bin/chromium
+//   3) PATH bo'yicha (`command -v`)             — Nixpacks nixPkgs=["chromium"]
+//   4) puppeteer'ning bundled Chromium'i        — lokal dev
 const resolveExecutablePath = () => {
   const envPath = process.env.PUPPETEER_EXECUTABLE_PATH;
   if (envPath && fs.existsSync(envPath)) return envPath;
   if (envPath) {
-    console.warn(
-      `[browser] PUPPETEER_EXECUTABLE_PATH ko'rsatgan Chrome topilmadi (${envPath}) — ` +
-        "puppeteer'ning o'z Chromium'iga o'taman. Serverga Chrome o'rnating yoki bu env'ni to'g'rilang."
-    );
+    console.warn(`[browser] PUPPETEER_EXECUTABLE_PATH topilmadi (${envPath}) — boshqa joylardan qidiramiz.`);
   }
+
+  const commonPaths = [
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/google-chrome",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+  ];
+  for (const p of commonPaths) if (fs.existsSync(p)) return p;
+
+  for (const bin of ["chromium", "chromium-browser", "google-chrome-stable", "google-chrome"]) {
+    try {
+      const found = execSync(`command -v ${bin} 2>/dev/null`, { encoding: "utf8" }).trim();
+      if (found && fs.existsSync(found)) return found;
+    } catch {
+      /* topilmadi — keyingisiga o'tamiz */
+    }
+  }
+
   try {
-    return executablePath();
+    const bundled = executablePath();
+    if (bundled && fs.existsSync(bundled)) return bundled;
   } catch {
-    return undefined;
+    /* bundled Chromium yuklanmagan */
   }
+
+  console.warn(
+    "[browser] Chrome/Chromium umuman topilmadi! Serverga o'rnating — Railway'da " +
+      "Dockerfile builder'ini yoqing yoki nixpacks.toml (chromium) bilan quring."
+  );
+  return undefined;
 };
 
 // Upstream (autentifikatsiyali) residential proksi URL'ini tayyorlaydi.
