@@ -2,14 +2,26 @@ const puppeteer = require("puppeteer-extra");
 const StealthPlugin = require("puppeteer-extra-plugin-stealth");
 const proxyChain = require("proxy-chain");
 const crypto = require("crypto");
+const fs = require("fs");
 
 const { executablePath } = require("puppeteer");
 
 puppeteer.use(StealthPlugin());
 
-// Resolve Chrome path: explicit env (Docker/Railway) wins, else puppeteer's bundled binary.
+// Chrome yo'lini aniqlaymiz. Muhim: PUPPETEER_EXECUTABLE_PATH (masalan Docker'da
+// /usr/bin/google-chrome-stable) o'rnatilgan bo'lsa-yu, lekin o'sha faylda Chrome
+// BO'LMASA (VPS'da Docker'siz ishga tushirilganda shunday bo'ladi) — ilgari
+// "spawn ... ENOENT" bilan qulab, 502 qaytarardi. Endi: yo'l mavjud bo'lsagina
+// ishlatamiz, aks holda puppeteer'ning o'z (bundled) Chromium'iga tushamiz.
 const resolveExecutablePath = () => {
-  if (process.env.PUPPETEER_EXECUTABLE_PATH) return process.env.PUPPETEER_EXECUTABLE_PATH;
+  const envPath = process.env.PUPPETEER_EXECUTABLE_PATH;
+  if (envPath && fs.existsSync(envPath)) return envPath;
+  if (envPath) {
+    console.warn(
+      `[browser] PUPPETEER_EXECUTABLE_PATH ko'rsatgan Chrome topilmadi (${envPath}) — ` +
+        "puppeteer'ning o'z Chromium'iga o'taman. Serverga Chrome o'rnating yoki bu env'ni to'g'rilang."
+    );
+  }
   try {
     return executablePath();
   } catch {
