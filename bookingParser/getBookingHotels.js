@@ -141,15 +141,16 @@ const getBookingHotels = async (
   const { page, closeBrowser } = await getBrowserInstance();
 
   // Booking sekin yuklansa yoki vaqtincha bloklasa — bir marta qayta urinamiz.
-  // Timeout qisqaroq (20s) — bloklangan so'rov 90s osilib turmasligi uchun
-  // (proksisiz Booking soft-block qilsa, tez "topilmadi" qaytsin).
+  // Timeout QISQA (12s) — Booking proxy IP'ni tez-tez bloklaydi; uzoq kutsa
+  // so'rovlar navbatga tushib backend'da 120s timeout beradi. Tez "yo'q" desin
+  // (narx baribir Google Hotels'dan keladi, bu faqat enrich/URL uchun).
   await page.goto(url, { waitUntil: "domcontentloaded" });
   try {
-    await page.waitForSelector('[data-testid="property-card"]', { timeout: 20000 * multiplier });
+    await page.waitForSelector('[data-testid="property-card"]', { timeout: 12000 * multiplier });
   } catch {
     await page.reload({ waitUntil: "domcontentloaded" });
-    await page.waitForTimeout(1500 * multiplier);
-    await page.waitForSelector('[data-testid="property-card"]', { timeout: 20000 * multiplier });
+    await page.waitForTimeout(1000 * multiplier);
+    await page.waitForSelector('[data-testid="property-card"]', { timeout: 12000 * multiplier });
   }
 
   const results = [...(await getHotelsInfo(page))];
