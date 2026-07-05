@@ -11,18 +11,20 @@ WORKDIR /app
 # "executablePath must be specified" / ENOENT xatosi. Endi package.json'dagi
 # puppeteer (19.7.2) o'ziga MOS Chromium'ni O'ZI yuklab oladi (SKIP_DOWNLOAD=false)
 # va topadi. Base image barcha tizim kutubxonalarini beradi.
-ENV NODE_ENV=production \
-    PUPPETEER_SKIP_DOWNLOAD=false
+ENV NODE_ENV=production
 
 # Install deps first for better layer caching.
 COPY --chown=pptruser:pptruser package*.json ./
 RUN npm ci --omit=dev || npm install --omit=dev
 
-# Chromium'ni ANIQ yuklab olamiz. Inline env RUN uchun ustun turadi — Railway
-# Variables'da SKIP_DOWNLOAD=true bo'lsa ham bu buyruq baribir yuklaydi. Xato
-# bo'lsa build TO'XTAYDI (jim o'tmaydi) — muammo darrov ko'rinadi.
-RUN PUPPETEER_SKIP_DOWNLOAD=false PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=false \
-    node node_modules/puppeteer/install.js
+# Chromium'ni ANIQ yuklab olamiz. MUHIM: PUPPETEER_SKIP_DOWNLOAD ni "false"
+# QILMAYMIZ — puppeteer uni oddiy truthy tekshiradi va "false" ham truthy =>
+# skip qilardi ("Skipping browser download as instructed"). Buning o'rniga base
+# image o'rnatgan skip-o'zgaruvchilarni UNSET qilamiz — shunda install.js
+# Chromium'ni ROSTDAN yuklaydi. Xato bo'lsa build to'xtaydi (jim o'tmaydi).
+RUN env -u PUPPETEER_SKIP_DOWNLOAD -u PUPPETEER_SKIP_CHROMIUM_DOWNLOAD \
+        -u npm_config_puppeteer_skip_download -u npm_config_puppeteer_skip_chromium_download \
+        node node_modules/puppeteer/install.js
 
 # App source
 COPY --chown=pptruser:pptruser . .
