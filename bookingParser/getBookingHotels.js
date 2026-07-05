@@ -25,7 +25,23 @@ const getHotelsInfo = async (page) => {
 
         const priceString = txt(el, '[data-testid="price-and-discounted-price"]');
         const taxesString = txt(el, '[data-testid="taxes-and-charges"]')?.replace(/[^0-9|+|-]/gm, "");
-        const starsLabel = attr(el, ".e4755bbd60", "aria-label");
+        // Yulduz: eski `.e4755bbd60` klass o'lgan (Booking obfuscated klassni
+        // almashtiradi). Barqaror selektor — `[data-testid="rating-stars"]`
+        // (rasmiy toifa), ichidagi ikonalar soni = yulduz. Bo'lmasa aria-label'dan
+        // raqam. Booking ba'zi sessiyalarda umuman ko'rsatmaydi → undefined
+        // (backend SerpAPI hotelClass bilan to'ldiradi).
+        const starsBox = el.querySelector('[data-testid="rating-stars"]');
+        let stars;
+        if (starsBox) {
+          const icons = starsBox.querySelectorAll("svg").length || starsBox.children.length;
+          if (icons > 0 && icons <= 5) {
+            stars = icons;
+          } else {
+            const al = starsBox.getAttribute("aria-label") || starsBox.querySelector("[aria-label]")?.getAttribute("aria-label") || "";
+            const mm = al.match(/([1-5])/);
+            if (mm) stars = parseInt(mm[1]);
+          }
+        }
         const distanceStr = txt(el, '[data-testid="distance"]');
         const reviewsStr = txt(el, '[data-testid="review-score"] > div:last-child > div:last-child');
         const scoreStr = txt(el, '[data-testid="review-score"] > div:first-child');
@@ -34,7 +50,7 @@ const getHotelsInfo = async (page) => {
         return {
           thumbnail: attr(el, "a img", "src"),
           title,
-          stars: starsLabel ? parseInt(starsLabel) : undefined,
+          stars,
           preferredBadge: Boolean(el.querySelector('[data-testid="preferred-badge"]')),
           promotedBadge: Boolean(el.querySelector(".e2f34d59b1")),
           location: txt(el, '[data-testid="address"]'),

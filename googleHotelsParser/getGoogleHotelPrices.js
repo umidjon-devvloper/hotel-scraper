@@ -45,7 +45,10 @@ const getGoogleHotelPrices = async (multiplier = 1, hotelName, location = "") =>
         const low = txt.toLowerCase();
         const hit = OTA_MAP.find(([k]) => low.includes(k));
         if (!hit) continue;
-        const m = txt.match(/(UZS|US\$|USD|RUB|EUR|GBP|\$|€|£|₽|₸|so['m]?m)\s?([\d][\d.,\s]{1,})/i);
+        // Narx: valyuta + BITTA raqam. Ilgari value qismida `\s` bor edi — "$221 $254"
+        // yoki "$221\n4.6" kabi matnda ikki raqam BIRLASHIB ketardi (221254 / 2214).
+        // Endi bo'sh joyda to'xtaydi — faqat toza raqam olinadi (USD: 1,234.00).
+        const m = txt.match(/(UZS|US\$|USD|RUB|EUR|GBP|\$|€|£|₽|₸|so['m]?m)\s?([\d][\d.,]*)/i);
         if (!m) continue;
         if (!found.has(hit[1])) {
           found.set(hit[1], { source: hit[1], currencyRaw: m[1], valueStr: m[2].trim() });
@@ -55,8 +58,22 @@ const getGoogleHotelPrices = async (multiplier = 1, hotelName, location = "") =>
     });
 
   try {
+    // Narx yoki "Prices" tab paydo bo'lishi bilan davom etamiz — qat'iy 3.5s
+    // kutish o'rniga (tez yuklansa ~1-2s tejaladi). Timeout bo'lsa ham davom
+    // etamiz: pastdagi polling baribir takliflar kelishini kutadi.
+    const waitForContent = async (ms) => {
+      try {
+        await page.waitForFunction(() => {
+          const hasTab = [...document.querySelectorAll('[role="tab"], button, a')]
+            .some((e) => /^prices$/i.test(e.textContent.trim()));
+          const hasPrice = /(US\$|USD|\$)\s?\d/.test(document.body.innerText || "");
+          return hasTab || hasPrice;
+        }, { timeout: ms, polling: 300 });
+      } catch { /* timeout — baribir davom etamiz */ }
+    };
+
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
-    await page.waitForTimeout(3500 * multiplier);
+    await waitForContent(4000 * multiplier);
 
     // Natijalar RO'YXATi chiqsa — birinchi mehmonxona kartasini ochamiz.
     const hasPrices = await page.evaluate(() =>
@@ -71,7 +88,7 @@ const getGoogleHotelPrices = async (multiplier = 1, hotelName, location = "") =>
           });
         if (card) card.click();
       });
-      await page.waitForTimeout(3500 * multiplier);
+      await waitForContent(4000 * multiplier);
     }
 
     // "Prices" tabini bosamiz — barcha OTA takliflari shu yerda yuklanadi.
@@ -92,12 +109,22 @@ const getGoogleHotelPrices = async (multiplier = 1, hotelName, location = "") =>
       result.reviews = s.includes("k") ? Math.round(parseFloat(s) * 1000) : parseInt(s) || null;
     }
 
-    // Takliflar ASYNC yuklanadi — paydo bo'lguncha pollaymiz (~12s gacha).
+    // Takliflar ASYNC (bittalab) yuklanadi. Ilgari 2 ta kelishi bilan to'xtardik —
+    // shu sababli ba'zi kanallar tushib qolardi. Endi takliflar soni O'SMAY
+    // BARQARORLASHGUNCHA kutamiz (barcha kanal kelsin), lekin barqaror bo'lishi
+    // bilan to'xtaymiz (bekorga 12s kutmaymiz). Ko'pi bilan 8 marta.
     let rawOffers = [];
+    let stable = 0;
     for (let i = 0; i < 8; i++) {
-      await page.waitForTimeout(1500 * multiplier);
-      rawOffers = await extractOffers();
-      if (rawOffers.length >= 2) break;
+      await page.waitForTimeout(1200 * multiplier);
+      const next = await extractOffers();
+      if (next.length > rawOffers.length) {
+        rawOffers = next; // ko'proq keldi — saqlaymiz, barqarorlik hisobini tiklaymiz
+        stable = 0;
+      } else if (rawOffers.length >= 2) {
+        stable += 1; // o'smadi — barqarorlashyapti
+        if (stable >= 2) break; // ketma-ket 2 marta o'smasa — hammasi kelgan
+      }
     }
 
     // Narxlarni Node tomonida ishonchli parse qilamiz (UZS "3,000,550" / "$70.50").
