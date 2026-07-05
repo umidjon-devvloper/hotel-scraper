@@ -14,9 +14,15 @@ WORKDIR /app
 ENV NODE_ENV=production \
     PUPPETEER_SKIP_DOWNLOAD=false
 
-# Install deps first for better layer caching. (postinstall Chromium'ni yuklaydi)
+# Install deps first for better layer caching.
 COPY --chown=pptruser:pptruser package*.json ./
 RUN npm ci --omit=dev || npm install --omit=dev
+
+# Chromium'ni ANIQ yuklab olamiz. Inline env RUN uchun ustun turadi — Railway
+# Variables'da SKIP_DOWNLOAD=true bo'lsa ham bu buyruq baribir yuklaydi. Xato
+# bo'lsa build TO'XTAYDI (jim o'tmaydi) — muammo darrov ko'rinadi.
+RUN PUPPETEER_SKIP_DOWNLOAD=false PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=false \
+    node node_modules/puppeteer/install.js
 
 # App source
 COPY --chown=pptruser:pptruser . .
