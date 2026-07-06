@@ -1,4 +1,4 @@
-import { getBrowserInstance } from "../helpers/browserInstance.cjs";
+import { getBrowserInstance, safeGoto } from "../helpers/browserInstance.cjs";
 
 /**
  * OSTROVOK.RU narx skreyperi — MDH/O'zbekiston uchun kuchli OTA (Google Hotels'da
@@ -27,7 +27,7 @@ const getOstrovokPrice = async (multiplier = 1, hotelName, city = "") => {
     const suggestUrl =
       "https://ostrovok.ru/api/site/multicomplete.json?query=" +
       encodeURIComponent(`${hotelName} ${city}`.trim()) + "&lang=en";
-    await page.goto(suggestUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await safeGoto(page, suggestUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
     const data = await page.evaluate(() => {
       try { return JSON.parse(document.body.innerText); } catch { return null; }
     });
@@ -51,7 +51,7 @@ const getOstrovokPrice = async (multiplier = 1, hotelName, city = "") => {
       `https://ostrovok.ru/hotel/${slug}/mid${best.master_id}/${best.otahotel_id}/` +
       `?dates=${dateStr(14)}-${dateStr(15)}&guests=2`;
 
-    await page.goto(hotelUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
+    await safeGoto(page, hotelUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
     // Narxlar AJAX bilan yuklanadi — paydo bo'lguncha kutamiz. Toza narx
     // leaf-elementlarini olamiz (faqat "₽ 22,706" ko'rinishidagilar — "View hotels
     // nearby" yoki soliq satrlari emas).

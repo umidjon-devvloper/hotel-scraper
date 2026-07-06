@@ -1,6 +1,6 @@
 import chalk from "chalk";
 import moment from "moment";
-import { getBrowserInstance } from "../helpers/browserInstance.cjs";
+import { getBrowserInstance, safeGoto } from "../helpers/browserInstance.cjs";
 import getBookingFilters from "./getBookingFilters.js";
 
 let multiplier = 1;
@@ -140,36 +140,37 @@ const getBookingHotels = async (
 
   const { page, closeBrowser } = await getBrowserInstance();
 
-  // Booking sekin yuklansa yoki vaqtincha bloklasa — bir marta qayta urinamiz.
-  // Timeout QISQA (12s) — Booking proxy IP'ni tez-tez bloklaydi; uzoq kutsa
-  // so'rovlar navbatga tushib backend'da 120s timeout beradi. Tez "yo'q" desin
-  // (narx baribir Google Hotels'dan keladi, bu faqat enrich/URL uchun).
-  await page.goto(url, { waitUntil: "domcontentloaded" });
+  // MUHIM: butun skreyp try/finally ichida — goto/waitForSelector xato bersa ham
+  // closeBrowser() ISHLAB, brauzer + proxy-chain serverini yopadi. Ilgari bu fayl
+  // yagona finally'siz edi → har booking xatosida brauzer+proksi sizib qolar,
+  // "MaxListenersExceededWarning" (11 exit/SIGINT listener) shundan chiqardi.
   try {
-    await page.waitForSelector('[data-testid="property-card"]', { timeout: 12000 * multiplier });
-  } catch {
-    await page.reload({ waitUntil: "domcontentloaded" });
-    await page.waitForTimeout(1000 * multiplier);
-    await page.waitForSelector('[data-testid="property-card"]', { timeout: 12000 * multiplier });
-  }
+    // Booking DataImpulse IP'ni tez-tez soft-bloklaydi — property-card umuman
+    // kelmaydi. Ilgari 12s + reload + 12s = ~25s behuda ketib, so'rov slotini
+    // band qilar va backend'da 120s "enrich timeout" berardi. Endi BITTA qisqa
+    // urinish (8s): tez "yo'q" desin — narx baribir Google Hotels'dan keladi,
+    // bu faqat enrich/URL uchun. safeGoto tunnel uzilishida o'zi qayta uradi.
+    await safeGoto(page, url, { waitUntil: "domcontentloaded" });
+    await page.waitForSelector('[data-testid="property-card"]', { timeout: 8000 * multiplier });
 
-  const results = [...(await getHotelsInfo(page))];
+    const results = [...(await getHotelsInfo(page))];
 
-  while (resultsLimit > results.length) {
-    const isNextPage = await page.$('[aria-label="Next page"]:not([disabled])');
-    if (!isNextPage) break;
-    await isNextPage.click();
-    await page.waitForTimeout(500 * multiplier);
-    while (await page.$('[data-testid="overlay-card"]')) {
+    while (resultsLimit > results.length) {
+      const isNextPage = await page.$('[aria-label="Next page"]:not([disabled])');
+      if (!isNextPage) break;
+      await isNextPage.click();
+      await page.waitForTimeout(500 * multiplier);
+      while (await page.$('[data-testid="overlay-card"]')) {
+        await page.waitForTimeout(2000 * multiplier);
+      }
       await page.waitForTimeout(2000 * multiplier);
+      results.push(...(await getHotelsInfo(page)));
     }
-    await page.waitForTimeout(2000 * multiplier);
-    results.push(...(await getHotelsInfo(page)));
+
+    return results.filter((el, i) => i < resultsLimit);
+  } finally {
+    await closeBrowser();
   }
-
-  await closeBrowser();
-
-  return results.filter((el, i) => i < resultsLimit);
 };
 
 export default getBookingHotels;

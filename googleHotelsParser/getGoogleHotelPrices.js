@@ -1,4 +1,4 @@
-import { getBrowserInstance } from "../helpers/browserInstance.cjs";
+import { getBrowserInstance, safeGoto } from "../helpers/browserInstance.cjs";
 
 /**
  * GOOGLE HOTELS NARX AGREGATORI — bitta skreypda BARCHA OTA narxlari.
@@ -72,7 +72,7 @@ const getGoogleHotelPrices = async (multiplier = 1, hotelName, location = "") =>
       } catch { /* timeout — baribir davom etamiz */ }
     };
 
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
+    await safeGoto(page, url, { waitUntil: "domcontentloaded", timeout: 45000 });
     await waitForContent(4000 * multiplier);
 
     // Natijalar RO'YXATi chiqsa — birinchi mehmonxona kartasini ochamiz.

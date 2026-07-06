@@ -9,6 +9,34 @@ const { executablePath } = require("puppeteer");
 
 puppeteer.use(StealthPlugin());
 
+// Har bir skreyp = alohida brauzer + proxy-chain server (IP rotatsiyasi uchun,
+// pool ATAYLAB yo'q). Ular har biri process signal (exit/SIGINT/SIGTERM/SIGHUP)
+// listener qo'shadi — SCRAPE_CONCURRENCY parallel ishlaganda 10 dan oshib
+// "MaxListenersExceededWarning" beradi (bu SIZISH emas, konkurrentlik). Chegarani
+// oshiramiz; haqiqiy sizishni pastdagi try/finally'lar tuzatadi.
+process.setMaxListeners(50);
+
+// Proksi (DataImpulse) ba'zan CONNECT tunnelini vaqtincha rad etadi
+// (ERR_TUNNEL_CONNECTION_FAILED) — ko'pincha o'tkinchi (gateway yuk ostida).
+// Qisqa tanaffus bilan bir necha bor qayta urinamiz; bitta xato butun skreypni
+// bekor qilmasin. IP baribir keyingi so'rovda yangilanadi (sticky per-brauzer).
+const RETRIABLE_NET =
+  /ERR_TUNNEL_CONNECTION_FAILED|ERR_PROXY_CONNECTION_FAILED|ERR_CONNECTION_(RESET|CLOSED|TIMED_OUT|REFUSED)|ERR_NETWORK_CHANGED|ERR_EMPTY_RESPONSE/i;
+
+const safeGoto = async (page, url, opts = {}, retries = 2) => {
+  let lastErr;
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await page.goto(url, opts);
+    } catch (e) {
+      lastErr = e;
+      if (!RETRIABLE_NET.test(e.message || "") || i === retries) throw e;
+      await new Promise((r) => setTimeout(r, 600 * (i + 1)));
+    }
+  }
+  throw lastErr;
+};
+
 // Chrome/Chromium yo'lini aniqlaymiz — MAVJUD faylni topguncha bir necha manba
 // sinaladi. Ilgari PUPPETEER_EXECUTABLE_PATH mavjud bo'lmagan yo'lni ko'rsatsa
 // "spawn ... ENOENT" / "executablePath ... must be specified" bilan 502 qaytardi.
@@ -169,4 +197,4 @@ const getBrowserInstance = async () => {
   return { page, closeBrowser };
 };
 
-module.exports = { getBrowserInstance };
+module.exports = { getBrowserInstance, safeGoto };
