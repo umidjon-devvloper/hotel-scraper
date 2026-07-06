@@ -111,6 +111,45 @@ export async function runOtaPrice({ provider = "googleHotels", params, apiKey })
 }
 
 /**
+ * Google Hotels RO'YXATi — bitta skreypда hudud bo'yicha barcha mehmonxona narxlari.
+ * `provider` adapteri `.listPrices(params)` metodini berishi kerak (hozircha googleHotels).
+ * Cache → adapter → log quvuri orqali.
+ * @returns {{cached, query, count, hotels}}
+ */
+export async function runList({ provider = "googleHotels", params, apiKey }) {
+  const adapter = getAdapter(provider);
+  if (!adapter || typeof adapter.listPrices !== "function") {
+    const err = new Error(`"${provider}" ro'yxat adapteri mavjud emas`);
+    err.statusCode = 400;
+    throw err;
+  }
+  const key = cacheKey(`list:${provider}`, params);
+  const cached = await cacheGet(key);
+  if (cached) return { cached: true, ...cached };
+
+  const start = nowMs();
+  try {
+    const result = await limit(() => adapter.listPrices(params));
+    // Bo'sh natijani keshlamaymiz (transient blok/skreyp xatosi qotib qolmasin).
+    if (result.hotels?.length) await cacheSet(key, result);
+    logSearch({
+      apiKey, provider, endpoint: "list",
+      location: params.query || params.location || params.city,
+      params, resultCount: result.hotels?.length || 0,
+      cacheHit: false, durationMs: nowMs() - start, status: "ok",
+    });
+    return { cached: false, ...result };
+  } catch (e) {
+    logSearch({
+      apiKey, provider, endpoint: "list",
+      location: params.query || params.location || params.city, params,
+      cacheHit: false, durationMs: nowMs() - start, status: "error", error: e.message,
+    });
+    throw e;
+  }
+}
+
+/**
  * Xona turlari — bitta property link uchun xona narx jadvali. `provider`
  * adapteri `.rooms(params)` metodini berishi kerak (hozircha faqat booking).
  * Cache → adapter → log quvuri orqali.

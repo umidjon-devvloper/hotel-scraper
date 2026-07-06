@@ -1,4 +1,4 @@
-import { runSearch, runDetails, runOtaPrice, runRooms, runCategoryRatings } from "../../core/searchService.js";
+import { runSearch, runDetails, runOtaPrice, runList, runRooms, runCategoryRatings } from "../../core/searchService.js";
 import { listProviders } from "../../adapters/index.js";
 
 const searchQuerySchema = {
@@ -56,6 +56,38 @@ export default async function searchRoutes(app) {
         return await runOtaPrice({
           provider: req.query.provider || "googleHotels",
           params: { name: req.query.name, city: req.query.city || "" },
+          apiKey: req.apiKey,
+        });
+      } catch (e) {
+        req.log.error(e);
+        return reply.code(e.statusCode || 502).send({ error: e.message });
+      }
+    },
+  );
+
+  // Google Hotels RO'YXATi — bitta skreypда hudud bo'yicha BARCHA mehmonxona
+  // (raqib) narxlari. `query` = hudud/qidiruv (mas "Bukhara").
+  app.get(
+    "/list-prices",
+    {
+      schema: {
+        querystring: {
+          type: "object",
+          required: ["query"],
+          properties: {
+            provider: { type: "string" },
+            query: { type: "string" },
+            city: { type: "string" },
+            limit: { type: "integer", minimum: 1 },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      try {
+        return await runList({
+          provider: req.query.provider || "googleHotels",
+          params: { query: req.query.query, city: req.query.city || "", limit: req.query.limit },
           apiKey: req.apiKey,
         });
       } catch (e) {
