@@ -1,6 +1,7 @@
 import { buildServer } from "./api/server.js";
 import config from "./config.js";
 
+
 // Stealth plugin fires _onTargetCreated async; if the browser closes first it
 // throws ProtocolError: Target closed as an unhandled rejection.  That error is
 // harmless (the scraper already caught it) but would crash Node v24 otherwise.
