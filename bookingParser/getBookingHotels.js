@@ -150,8 +150,18 @@ const getBookingHotels = async (
     // band qilar va backend'da 120s "enrich timeout" berardi. Endi BITTA qisqa
     // urinish (8s): tez "yo'q" desin — narx baribir Google Hotels'dan keladi,
     // bu faqat enrich/URL uchun. safeGoto tunnel uzilishida o'zi qayta uradi.
-    await safeGoto(page, url, { waitUntil: "domcontentloaded" });
-    await page.waitForSelector('[data-testid="property-card"]', { timeout: 8000 * multiplier });
+    try {
+      await safeGoto(page, url, { waitUntil: "domcontentloaded" });
+      await page.waitForSelector('[data-testid="property-card"]', { timeout: 8000 * multiplier });
+    } catch (e) {
+      // Booking DataImpulse IP'ni soft-bloklaganda (yoki natija bo'lmaganda)
+      // property-card umuman kelmaydi. Bu yerda XATO TASHLAMAYMIZ — aks holda
+      // route 502 qaytarib, backend qayta-qayta urinardi (navbatni tiqib, narx
+      // beradigan Google/Ostrovok so'rovlarini kutdirar). Buning o'rniga BO'SH []
+      // qaytaramiz: route 200 beradi, backend narxni Google Hotels'dan oladi.
+      console.warn(`[booking hotels] property-card yo'q (blok/natija yo'q) — bo'sh qaytaramiz: ${String(e.message).split("\n")[0]}`);
+      return [];
+    }
 
     const results = [...(await getHotelsInfo(page))];
 
