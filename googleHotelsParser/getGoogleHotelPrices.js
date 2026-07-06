@@ -25,6 +25,28 @@ const getGoogleHotelPrices = async (multiplier = 1, hotelName, location = "") =>
 
   const { page, closeBrowser } = await getBrowserInstance();
   const result = { hotelName, matchedName: "", offers: [], rating: null, reviews: null, currency: null };
+  const empty = () => ({ hotelName, matchedName: "", offers: [], rating: null, reviews: null, currency: null });
+
+  // ── Nom mosligini tekshirish ──────────────────────────────────────────────
+  // Google kichik mehmonxonalar uchun ko'pincha ENTITY emas, boshqa mehmonxonalar
+  // RO'YXATini ochadi. Eski kod ro'yxatning BIRINCHI kartasidan reyting/narx olar
+  // edi — bu BOSHQA mehmonxona ("Kamelot" so'ralsa "Nabibek Teracce" kelardi) =>
+  // NOTO'G'RI ma'lumot. Endi nomni tokenlab solishtiramiz: mos kelmasa bo'sh.
+  const STOP = new Set(["hotel", "hotels", "mehmonxona", "mehmonxonasi", "mehmonxona'si", "guesthouse", "guest", "house", "inn", "resort", "boutique", "the", "and", "bukhara", "samarkand", "tashkent"]);
+  const norm = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+  const sigTokens = (s) => norm(s).split(" ").filter((t) => t.length >= 3 && !STOP.has(t));
+  // candidate so'ralgan nomga mos keladimi? Bitta o'ziga xos (>=6 harf) token
+  // mos kelsa yetarli (Varaxsho, Zarafshon, Suzani); aks holda qisqa nomlar uchun
+  // BARCHA ajratuvchi token talab qilinadi (noto'g'ri moslik bo'lmasin).
+  const nameMatches = (candidate, want) => {
+    const wt = sigTokens(want);
+    if (!wt.length) return true; // nomda ajratuvchi token yo'q — tekshirib bo'lmaydi
+    const cn = norm(candidate);
+    const hits = wt.filter((t) => cn.includes(t));
+    if (hits.some((t) => t.length >= 6)) return true;
+    const need = wt.length <= 3 ? wt.length : Math.ceil(wt.length * 0.7);
+    return hits.length >= need;
+  };
 
   // Sahifadan OTA takliflarini ajratib oluvchi (qayta-qayta chaqiriladi — polling).
   const extractOffers = () =>
@@ -75,19 +97,31 @@ const getGoogleHotelPrices = async (multiplier = 1, hotelName, location = "") =>
     await safeGoto(page, url, { waitUntil: "domcontentloaded", timeout: 45000 });
     await waitForContent(4000 * multiplier);
 
-    // Natijalar RO'YXATi chiqsa — birinchi mehmonxona kartasini ochamiz.
-    const hasPrices = await page.evaluate(() =>
-      [...document.querySelectorAll('[role="tab"], button, a')].some((e) => /^prices$/i.test(e.textContent.trim())),
-    );
-    if (!hasPrices) {
-      await page.evaluate(() => {
-        const card = [...document.querySelectorAll('[role="link"], a[href*="/travel/"]')]
-          .find((el) => {
-            const al = el.getAttribute("aria-label") || el.textContent || "";
-            return al.length > 6 && al.length < 80 && /hotel|guest|inn|house|resort|\$|UZS/i.test(al);
-          });
-        if (card) card.click();
-      });
+    // ENTITY (to'g'ri mehmonxona) sahifasidamizmi? — title so'ralgan nomga mos kelsa
+    // ha. Aks holda RO'YXAT yoki noto'g'ri entity: mos kartani qidiramiz. (Ro'yxat
+    // sahifasida ham "Prices" tab bo'ladi, shu sabab eski `hasPrices` ishonchsiz edi.)
+    const onRightEntity = nameMatches(await page.title(), hotelName);
+
+    if (!onRightEntity) {
+      // Ro'yxat kartalari: `a[href*="/travel/"]`, aria-label'da mehmonxona nomi
+      // ("Nabibek Teracce", "Prices starting from $35, Nabibek Teracce", ...).
+      // So'ralgan nomga MOS kartani topib bosamiz — birinchisini emas.
+      const cards = await page.evaluate(() =>
+        [...document.querySelectorAll('a[href*="/travel/"]')]
+          .map((c, i) => ({ i, aria: c.getAttribute("aria-label") || "" }))
+          .filter((x) => x.aria.length > 4),
+      );
+      const hit = cards.find((c) => nameMatches(c.aria, hotelName));
+      if (!hit) {
+        // So'ralgan mehmonxona ro'yxatda YO'Q — noto'g'ri mehmonxona bermaslik uchun
+        // bo'sh qaytaramiz (backend boshqa manbaga o'tadi).
+        console.warn(`[googleHotels] "${hotelName}" Google ro'yxatida topilmadi — bo'sh qaytaramiz`);
+        return empty();
+      }
+      await page.evaluate((idx) => {
+        const el = document.querySelectorAll('a[href*="/travel/"]')[idx];
+        if (el) el.click();
+      }, hit.i);
       await waitForContent(4000 * multiplier);
     }
 
@@ -156,6 +190,14 @@ const getGoogleHotelPrices = async (multiplier = 1, hotelName, location = "") =>
       .filter((o) => o.value > 0 && o.source !== "Official site");
     result.currency = result.offers[0]?.currency || "USD";
     result.matchedName = await page.title().then((t) => t.replace(/ - Google.*$/i, "").trim()).catch(() => hotelName);
+
+    // OXIRGI GUARD: topilgan mehmonxona so'ralganiga mos kelmasa (ro'yxatda qolib
+    // ketgan yoki noto'g'ri entity), reyting/narx BOSHQA mehmonxonaniki bo'ladi —
+    // uni BERMAYMIZ. Bu "noto'g'ri mehmonxona ma'lumoti" muammosining oldini oladi.
+    if (!nameMatches(result.matchedName, hotelName)) {
+      console.warn(`[googleHotels] mos emas: so'ralgan "${hotelName}" ≠ topilgan "${result.matchedName}" — bo'sh qaytaramiz`);
+      return empty();
+    }
   } catch (e) {
     console.warn("[googleHotels] xato:", e.message);
   } finally {
